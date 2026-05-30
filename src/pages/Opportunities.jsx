@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import OrderModal from '../components/OrderModal';
 import RebalanceModal from '../components/RebalanceModal';
@@ -6,13 +6,26 @@ import { useMarket } from '../contexts/MarketContext';
 import { toast } from 'react-toastify';
 
 export default function Opportunities() {
-  const { opportunities, loading } = useMarket(); 
+  // Puxamos a ordem pendente do contexto global
+  const { opportunities, loading, pendingOrder, setPendingOrder } = useMarket(); 
   const [searchTerm, setSearchTerm] = useState('');
   
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [selectedOrderData, setSelectedOrderData] = useState(null);
   const [isRebalanceOpen, setIsRebalanceOpen] = useState(false);
   const [rebalanceData, setRebalanceData] = useState(null);
+
+  // --- NOVO: Reage ao clique vindo da Notificação Global ---
+  useEffect(() => {
+    if (pendingOrder) {
+      // Pré-preenche o modal com os dados que vieram do Toast
+      setSelectedOrderData({ market: pendingOrder.market, side: pendingOrder.side, type: 'limit' });
+      setIsOrderModalOpen(true);
+      
+      // Limpa a fila do contexto imediatamente para o modal não reabrir sozinho no futuro
+      setPendingOrder(null);
+    }
+  }, [pendingOrder, setPendingOrder]);
 
   const availableMarkets = [...new Set(opportunities.map(opp => opp.market))].sort();
   const normalizedSearch = searchTerm.toLowerCase();
@@ -61,7 +74,6 @@ export default function Opportunities() {
         </div>
         <table className="data-table">
           <thead>
-            {/* Coluna de Atualização inserida */}
             <tr><th>Mercado</th><th>Tipo</th><th>Ação Recomendada</th><th>Atualização</th><th>Ação</th></tr>
           </thead>
           <tbody>
@@ -75,7 +87,6 @@ export default function Opportunities() {
                   <td><span className="market-badge">{opp.market}</span></td>
                   <td><span className={`badge ${opp.badgeClass}`}>{opp.type}</span></td>
                   <td><strong>{opp.recommendation}</strong></td>
-                  {/* Célula renderizando a hora */}
                   <td style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{opp.timestamp}</td>
                   <td>
                     <button className="btn-action execute" style={{ minWidth: '140px' }} onClick={() => { setSelectedOrderData({ market: opp.market, side: opp.actionSide, type: 'limit' }); setIsOrderModalOpen(true); }}>

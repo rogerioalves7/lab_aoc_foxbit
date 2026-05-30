@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom'; // <-- IMPORTANTE: Para trocar de tela
 import api from '../services/api';
 import { toast } from 'react-toastify';
 
@@ -9,6 +10,10 @@ export const MarketProvider = ({ children }) => {
   const [opportunities, setOpportunities] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // --- NOVO: Estado para guardar a ordem que veio do clique no Toast ---
+  const [pendingOrder, setPendingOrder] = useState(null); 
+  const navigate = useNavigate();
+
   const prevOppsRef = useRef([]);
 
   const fetchMarketData = async () => {
@@ -21,13 +26,12 @@ export const MarketProvider = ({ children }) => {
 
       setTickers(validTickers);
 
-      // --- MOTOR DE DETECÇÃO ---
       const marketStats = {};
       validTickers.forEach(t => {
         const sym = t.market_symbol;
         const bid = parseFloat(t.bid_price);
         const ask = parseFloat(t.ask_price);
-        const ts = t.timestamp; // Captura o Timestamp da API
+        const ts = t.timestamp; 
 
         if (!marketStats[sym]) {
           marketStats[sym] = { 
@@ -37,14 +41,10 @@ export const MarketProvider = ({ children }) => {
           };
         } else {
           if (bid > marketStats[sym].maxBid) { 
-            marketStats[sym].maxBid = bid; 
-            marketStats[sym].maxBidEx = t.exchange_name; 
-            marketStats[sym].maxBidTs = ts;
+            marketStats[sym].maxBid = bid; marketStats[sym].maxBidEx = t.exchange_name; marketStats[sym].maxBidTs = ts;
           }
           if (ask < marketStats[sym].minAsk) { 
-            marketStats[sym].minAsk = ask; 
-            marketStats[sym].minAskEx = t.exchange_name; 
-            marketStats[sym].minAskTs = ts;
+            marketStats[sym].minAsk = ask; marketStats[sym].minAskEx = t.exchange_name; marketStats[sym].minAskTs = ts;
           }
         }
       });
@@ -53,7 +53,6 @@ export const MarketProvider = ({ children }) => {
       const formatPrice = (p) => p.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 
       Object.values(marketStats).forEach(m => {
-        // Pega o Timestamp mais recente entre as duas pontas da operação
         const latestTs = new Date(Math.max(new Date(m.maxBidTs), new Date(m.minAskTs)));
         const formattedTime = latestTs.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
 
@@ -61,8 +60,7 @@ export const MarketProvider = ({ children }) => {
           foundOpps.push({
             id: `${m.symbol}-arb`, market: m.symbol, type: 'Arbitragem', badgeClass: 'badge-buy', 
             recommendation: `Comprar em ${m.minAskEx} a ${formatPrice(m.minAsk)} e Vender em ${m.maxBidEx} a ${formatPrice(m.maxBid)}`,
-            actionSide: 'compra',
-            timestamp: formattedTime // Injeta a hora na oportunidade
+            actionSide: 'compra', timestamp: formattedTime 
           });
         } else {
           const spread = m.minAsk - m.maxBid;
@@ -72,8 +70,7 @@ export const MarketProvider = ({ children }) => {
              foundOpps.push({
                id: `${m.symbol}-spread`, market: m.symbol, type: 'Spread Largo', badgeClass: 'badge-adjust', 
                recommendation: `Criar Maker Bid a ${formatPrice(newBid)} para fechar spread`,
-               actionSide: 'compra',
-               timestamp: formattedTime // Injeta a hora na oportunidade
+               actionSide: 'compra', timestamp: formattedTime 
              });
           }
         }
@@ -84,7 +81,16 @@ export const MarketProvider = ({ children }) => {
 
       if (newOpportunities.length > 0 && previousIds.length > 0) {
         newOpportunities.forEach(opp => {
-          toast.info(`Nova oportunidade: ${opp.type} em ${opp.market}!`, { theme: 'dark' });
+          // --- NOVO: Notificação clicável ---
+          toast.info(`🎯 Nova oportunidade: ${opp.type} em ${opp.market}! Clique para operar.`, { 
+            theme: 'dark',
+            style: { cursor: 'pointer' }, // Muda o mouse para uma mãozinha indicando que é clicável
+            onClick: () => {
+              // Guarda a ordem no contexto e envia o usuário para a tela de oportunidades
+              setPendingOrder({ market: opp.market, side: opp.actionSide });
+              navigate('/opportunities');
+            }
+          });
         });
       }
 
@@ -105,7 +111,8 @@ export const MarketProvider = ({ children }) => {
   }, []);
 
   return (
-    <MarketContext.Provider value={{ tickers, opportunities, loading }}>
+    // Passamos o pendingOrder para frente
+    <MarketContext.Provider value={{ tickers, opportunities, loading, pendingOrder, setPendingOrder }}>
       {children}
     </MarketContext.Provider>
   );
