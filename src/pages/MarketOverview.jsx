@@ -25,14 +25,12 @@ const getChartOptions = (datasets) => {
         grid: { color: '#F0F0F0' },
         ticks: isSingleAsset 
           ? { callback: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 }) }
-          // Adicionei valores decimais na escala logarítmica para acomodar micro-coins
           : { callback: (value) => [0.0001, 0.01, 1, 10, 100, 1000, 10000, 100000].includes(value) ? value.toLocaleString('pt-BR') : null }
       },
       x: { grid: { display: false } }
     },
     plugins: { 
       legend: { display: false },
-      // CORREÇÃO: Força o tooltip a mostrar até 8 casas decimais, evitando que micro-moedas sejam exibidas como "0"
       tooltip: {
         callbacks: {
           label: function(context) {
@@ -57,8 +55,11 @@ const getChartOptions = (datasets) => {
 
 export default function MarketOverview() {
   const [expandedRow, setExpandedRow] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
   
+  // --- Estados do Filtro (Texto + Lista Suspensa) ---
+  const [searchTerm, setSearchTerm] = useState('');
+  const [availableMarkets, setAvailableMarkets] = useState([]); // Array para preencher o Dropdown
+
   const [loading, setLoading] = useState(true);
   const [tableData, setTableData] = useState({});
   const [chartDataBid, setChartDataBid] = useState({ labels: [], datasets: [] });
@@ -74,7 +75,6 @@ export default function MarketOverview() {
         setLoading(true);
         const response = await api.get('/api/tickers/');
         
-        // CORREÇÃO: AMBOS (Bid e Ask) devem ser obrigatoriamente maiores que zero (&&)
         const tickers = (response.data.results || []).filter(t => {
           const bid = parseFloat(t.bid_price);
           const ask = parseFloat(t.ask_price);
@@ -111,6 +111,10 @@ export default function MarketOverview() {
         });
 
         setTableData(groupedMarkets);
+
+        // --- NOVO: Extrai e ordena os mercados reais da API para o Dropdown ---
+        const uniqueMarkets = Object.keys(groupedMarkets).sort();
+        setAvailableMarkets(uniqueMarkets);
 
         const timestamps = [...new Set(tickers.map(t => t.timestamp))].sort();
         const labels = timestamps.map(ts => {
@@ -163,6 +167,7 @@ export default function MarketOverview() {
     fetchDashboardData();
   }, []);
 
+  // --- LÓGICA DE FILTRAGEM ---
   const normalizedSearch = searchTerm.toLowerCase();
 
   const filteredTableData = Object.values(tableData).filter(market => 
@@ -171,31 +176,50 @@ export default function MarketOverview() {
 
   const filteredChartBid = {
     ...chartDataBid,
-    datasets: chartDataBid.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch)) || []
+    datasets: chartDataBid.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch) || normalizedSearch.includes(ds.label.toLowerCase())) || []
   };
 
   const filteredChartAsk = {
     ...chartDataAsk,
-    datasets: chartDataAsk.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch)) || []
+    datasets: chartDataAsk.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch) || normalizedSearch.includes(ds.label.toLowerCase())) || []
   };
 
   const isSingleBid = filteredChartBid.datasets.length === 1;
   const isSingleAsk = filteredChartAsk.datasets.length === 1;
 
+  // Verifica se o termo digitado bate exatamente com algum mercado para sincronizar o select
+  const currentSelectValue = availableMarkets.find(m => m.toLowerCase() === searchTerm.toLowerCase()) || "";
+
   return (
     <>
       <Header />
 
-      <div className="section-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+      {/* --- NOVA BARRA DE FILTRO INTEGRADA (INPUT + DROPDOWN) --- */}
+      <div className="section-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '18px' }}>🔍</span>
+        
+        {/* Campo de Texto */}
         <input 
           type="text" 
           className="form-input" 
-          style={{ margin: 0, maxWidth: '400px', backgroundColor: 'var(--bg-light)' }}
+          style={{ margin: 0, flex: '1 1 300px', backgroundColor: 'var(--bg-light)' }}
           placeholder="Filtrar por ativo ou mercado (Ex: BTC, ETH...)" 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
+
+        {/* Lista Suspensa Sincronizada */}
+        <select 
+          className="form-input"
+          style={{ margin: 0, flex: '0 0 220px', backgroundColor: 'var(--bg-light)', cursor: 'pointer' }}
+          value={currentSelectValue}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        >
+          <option value="">Todos os Mercados</option>
+          {availableMarkets.map(market => (
+            <option key={market} value={market}>{market}</option>
+          ))}
+        </select>
       </div>
       
       <div className="top-charts-row">

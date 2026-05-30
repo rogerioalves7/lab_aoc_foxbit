@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import OrderModal from '../components/OrderModal';
 import RebalanceModal from '../components/RebalanceModal';
-import api from '../services/api'; // Importação da API
+import api from '../services/api';
 import { toast } from 'react-toastify';
 
 export default function Opportunities() {
@@ -14,6 +14,8 @@ export default function Opportunities() {
 
   // Estados dos Dados
   const [opportunities, setOpportunities] = useState([]);
+  const [availableMarkets, setAvailableMarkets] = useState([]); // Lista para o Dropdown
+  const [searchTerm, setSearchTerm] = useState(''); // Estado do Filtro
   const [loading, setLoading] = useState(true);
 
   // --- MOTOR DE DETECÇÃO DE OPORTUNIDADES ---
@@ -23,7 +25,6 @@ export default function Opportunities() {
         setLoading(true);
         const response = await api.get('/api/tickers/');
         
-        // Filtra tickers com valores zerados/inválidos
         const tickers = (response.data.results || []).filter(t => {
           return parseFloat(t.bid_price) > 0 && parseFloat(t.ask_price) > 0;
         });
@@ -59,28 +60,26 @@ export default function Opportunities() {
 
         // 2. Analisa as estatísticas buscando oportunidades
         Object.values(marketStats).forEach(m => {
-          // A) Verifica Arbitragem Direta
           if (m.maxBid > m.minAsk) {
             foundOpps.push({
               id: `${m.symbol}-arb`,
               market: m.symbol,
               type: 'Arbitragem',
-              badgeClass: 'badge-buy', // Verde
+              badgeClass: 'badge-buy', 
               recommendation: `Comprar em ${m.minAskEx} a ${formatPrice(m.minAsk)} e Vender em ${m.maxBidEx} a ${formatPrice(m.maxBid)}`,
               actionSide: 'compra'
             });
           } else {
-            // B) Verifica Spread Largo (acima de 0.5%) para atuar como Maker
             const spread = m.minAsk - m.maxBid;
             const spreadPerc = (spread / m.maxBid) * 100;
 
             if (spreadPerc > 0.5) {
-               const newBid = m.maxBid + (spread * 0.1); // Sugere cobrir o melhor bid por pouco
+               const newBid = m.maxBid + (spread * 0.1); 
                foundOpps.push({
                  id: `${m.symbol}-spread`,
                  market: m.symbol,
                  type: 'Spread Largo',
-                 badgeClass: 'badge-adjust', // Amarelo
+                 badgeClass: 'badge-adjust', 
                  recommendation: `Criar Maker Bid a ${formatPrice(newBid)} para fechar spread`,
                  actionSide: 'compra'
                });
@@ -88,15 +87,14 @@ export default function Opportunities() {
           }
         });
 
-        // 3. Fallback: Se não encontrar nenhuma anomalia no mercado atual, sugere ajustes padrão
-        // Isso evita que a tela fique vazia se a API estiver com valores muito "comportados"
+        // 3. Fallback
         if (foundOpps.length === 0 && Object.keys(marketStats).length > 0) {
           Object.values(marketStats).slice(0, 3).forEach((m) => {
             foundOpps.push({
               id: `${m.symbol}-ajuste`,
               market: m.symbol,
               type: 'Ajuste de Posição',
-              badgeClass: 'badge-sell', // Vermelho
+              badgeClass: 'badge-sell',
               recommendation: `Reposicionar Maker Ask para ${formatPrice(m.minAsk * 0.999)}`,
               actionSide: 'venda'
             });
@@ -104,6 +102,10 @@ export default function Opportunities() {
         }
 
         setOpportunities(foundOpps);
+
+        // 4. Extrai a lista de mercados únicos para o Dropdown (em ordem alfabética)
+        const uniqueMarkets = [...new Set(foundOpps.map(opp => opp.market))].sort();
+        setAvailableMarkets(uniqueMarkets);
 
       } catch (error) {
         console.error("Erro ao buscar oportunidades:", error);
@@ -137,17 +139,55 @@ export default function Opportunities() {
     setIsRebalanceOpen(false);
   };
 
+  // --- LÓGICA DE FILTRAGEM ---
+  const normalizedSearch = searchTerm.toLowerCase();
+  
+  // Filtra as oportunidades baseando-se no mercado ou no tipo de operação
+  const filteredOpportunities = opportunities.filter(opp => 
+    opp.market.toLowerCase().includes(normalizedSearch) ||
+    opp.type.toLowerCase().includes(normalizedSearch)
+  );
+
   return (
     <>
       <Header />
 
       <div className="kpi-row">
         <div className="kpi-card">
-          <div className="kpi-title">Oportunidades Encontradas</div>
-          {/* KPI Dinâmico baseado no tamanho do Array retornado pela API */}
-          <div className="kpi-value">{loading ? '...' : opportunities.length}</div>
+          <div className="kpi-title">Oportunidades Listadas</div>
+          {/* KPI reflete o número de itens filtrados na tela */}
+          <div className="kpi-value">{loading ? '...' : filteredOpportunities.length}</div>
           <div className="kpi-desc" style={{ color: 'var(--tertiary-green)' }}>Baseado na análise atual do backend</div>
         </div>
+      </div>
+
+      {/* --- BARRA DE FILTRO (INPUT + DROPDOWN) --- */}
+      <div className="section-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '18px' }}>🔍</span>
+        
+        {/* Campo de Digitação Livre */}
+        <input 
+          type="text" 
+          className="form-input" 
+          style={{ margin: 0, flex: '1 1 300px', backgroundColor: 'var(--bg-light)' }}
+          placeholder="Digite o mercado (Ex: BTC) ou tipo (Ex: Arbitragem)..." 
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+
+        {/* Lista Suspensa (Dropdown) Sincronizada */}
+        <select 
+          className="form-input"
+          style={{ margin: 0, flex: '0 0 220px', backgroundColor: 'var(--bg-light)', cursor: 'pointer' }}
+          // O select assume o valor do input caso seja um mercado válido, ou fica em "" (Todos)
+          value={availableMarkets.includes(searchTerm.toUpperCase()) ? searchTerm.toUpperCase() : ""}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        >
+          <option value="">Todos os Mercados</option>
+          {availableMarkets.map(market => (
+            <option key={market} value={market}>{market}</option>
+          ))}
+        </select>
       </div>
 
       <div className="section-card">
@@ -170,14 +210,14 @@ export default function Opportunities() {
                   Analisando mercado e buscando oportunidades...
                 </td>
               </tr>
-            ) : opportunities.length === 0 ? (
+            ) : filteredOpportunities.length === 0 ? (
               <tr>
                 <td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                  Nenhuma oportunidade encontrada no momento.
+                  {searchTerm ? `Nenhuma oportunidade encontrada para "${searchTerm}".` : "Nenhuma oportunidade encontrada no momento."}
                 </td>
               </tr>
             ) : (
-              opportunities.map((opp) => (
+              filteredOpportunities.map((opp) => (
                 <tr key={opp.id}>
                   <td><span className="market-badge">{opp.market}</span></td>
                   <td><span className={`badge ${opp.badgeClass}`}>{opp.type}</span></td>
