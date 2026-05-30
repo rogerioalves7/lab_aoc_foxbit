@@ -6,27 +6,44 @@ import { Line } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, LogarithmicScale);
 
-const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  scales: {
-    y: {
-      type: 'logarithmic',
-      title: { display: true, text: 'USD (Log Scale)', color: '#6C757D' },
-      grid: { color: '#F0F0F0' },
-      ticks: {
-        callback: (value) => [10, 100, 1000, 10000, 100000].includes(value) ? value.toLocaleString('pt-BR') : null
-      }
+// --- NOVA FUNÇÃO DINÂMICA DE OPÇÕES DO GRÁFICO ---
+const getChartOptions = (datasets) => {
+  // Se tivermos apenas 1 ativo na tela, usamos escala Linear para dar zoom na volatilidade.
+  // Caso contrário, usamos Logarítmica para caber moedas de valores muito distantes juntas.
+  const isSingleAsset = datasets.length === 1;
+
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        type: isSingleAsset ? 'linear' : 'logarithmic',
+        title: { 
+          display: true, 
+          text: isSingleAsset ? 'USD (Linear Auto-Scale)' : 'USD (Log Scale)', 
+          color: '#6C757D' 
+        },
+        grid: { color: '#F0F0F0' },
+        ticks: isSingleAsset 
+          ? {
+              // No modo Linear, o Chart.js acha o Min e Max automaticamente.
+              // Apenas formatamos os números para o padrão monetário.
+              callback: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            }
+          : {
+              // No modo Logarítmico, fixamos as quebras para a tela não ficar poluída.
+              callback: (value) => [1, 10, 100, 1000, 10000, 100000].includes(value) ? value.toLocaleString('pt-BR') : null
+            }
+      },
+      x: { grid: { display: false } }
     },
-    x: { grid: { display: false } }
-  },
-  plugins: { legend: { display: false } }
+    plugins: { legend: { display: false } },
+    animation: { duration: 400 } // Animação suave na troca de escala
+  };
 };
 
 export default function MarketOverview() {
   const [expandedRow, setExpandedRow] = useState(null);
-  
-  // Novo estado para o filtro de busca
   const [searchTerm, setSearchTerm] = useState('');
   
   const [loading, setLoading] = useState(true);
@@ -127,15 +144,12 @@ export default function MarketOverview() {
     fetchDashboardData();
   }, []);
 
-  // --- LÓGICA DE FILTRAGEM ---
   const normalizedSearch = searchTerm.toLowerCase();
 
-  // Filtra a Tabela
   const filteredTableData = Object.values(tableData).filter(market => 
     market.symbol.toLowerCase().includes(normalizedSearch)
   );
 
-  // Filtra os Gráficos
   const filteredChartBid = {
     ...chartDataBid,
     datasets: chartDataBid.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch)) || []
@@ -150,7 +164,6 @@ export default function MarketOverview() {
     <>
       <Header />
 
-      {/* --- BARRA DE FILTRO --- */}
       <div className="section-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '15px' }}>
         <span style={{ fontSize: '18px' }}>🔍</span>
         <input 
@@ -175,7 +188,8 @@ export default function MarketOverview() {
             {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
             ) : filteredChartBid.datasets.length > 0 ? (
-              <Line data={filteredChartBid} options={chartOptions} />
+              {/* Passamos o array de datasets filtrados para a nossa nova função de opções */}
+              <Line data={filteredChartBid} options={getChartOptions(filteredChartBid.datasets)} />
             ) : (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Nenhum ativo corresponde ao filtro</div>
             )}
@@ -193,7 +207,8 @@ export default function MarketOverview() {
              {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
             ) : filteredChartAsk.datasets.length > 0 ? (
-              <Line data={filteredChartAsk} options={chartOptions} />
+              {/* Passamos o array de datasets filtrados para a nossa nova função de opções */}
+              <Line data={filteredChartAsk} options={getChartOptions(filteredChartAsk.datasets)} />
             ) : (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Nenhum ativo corresponde ao filtro</div>
             )}
