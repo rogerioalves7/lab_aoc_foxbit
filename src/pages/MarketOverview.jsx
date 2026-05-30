@@ -1,33 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '../components/Header';
+import api from '../services/api'; // Conexão com o backend
+import { toast } from 'react-toastify';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, LogarithmicScale } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
 // Registra os componentes do ChartJS
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, LogarithmicScale);
-
-// Função geradora de dados
-const generateAssetData = (numPoints, basePrice, volatility) => {
-  let currentPrice = basePrice;
-  let data = [currentPrice];
-  for (let i = 1; i < numPoints; i++) {
-    let movement = (Math.random() - 0.5) * 2 * volatility;
-    currentPrice += movement;
-    currentPrice = Math.max(0.01, currentPrice);
-    data.push(Number(currentPrice.toFixed(2)));
-  }
-  return data;
-};
-
-// Dados Fixos
-const timeLabels = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'];
-const btcBidData = generateAssetData(timeLabels.length, 62100, 500);
-const ethBidData = generateAssetData(timeLabels.length, 3400, 50);
-const peteBidData = generateAssetData(timeLabels.length, 12.50, 0.5);
-
-const btcAskData = btcBidData.map(val => val + 2.5);
-const ethAskData = ethBidData.map(val => val + 0.8);
-const peteAskData = peteBidData.map(val => val + 0.03);
 
 const chartOptions = {
   responsive: true,
@@ -47,30 +26,117 @@ const chartOptions = {
 };
 
 export default function MarketOverview() {
-  // Estado para controlar qual acordeão está aberto
-  const [expandedRow, setExpandedRow] = useState('btc');
+  const [expandedRow, setExpandedRow] = useState(null);
+  
+  // Estados para armazenar os dados reais da API
+  const [loading, setLoading] = useState(true);
+  const [tableData, setTableData] = useState({});
+  const [chartDataBid, setChartDataBid] = useState({ labels: [], datasets: [] });
+  const [chartDataAsk, setChartDataAsk] = useState({ labels: [], datasets: [] });
 
   const toggleAccordion = (market) => {
     setExpandedRow(expandedRow === market ? null : market);
   };
 
-  const bidData = {
-    labels: timeLabels,
-    datasets: [
-      { label: 'BTC', data: btcBidData, borderColor: '#007BFF', tension: 0.3, pointRadius: 2 },
-      { label: 'ETH', data: ethBidData, borderColor: '#A103DF', tension: 0.3, pointRadius: 2 },
-      { label: 'PETE', data: peteBidData, borderColor: '#FF5722', tension: 0.3, pointRadius: 2 }
-    ]
-  };
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        // Busca os tickers mais recentes do backend
+        const response = await api.get('/api/tickers/');
+        const tickers = response.data.results || [];
 
-  const askData = {
-    labels: timeLabels,
-    datasets: [
-      { label: 'BTC', data: btcAskData, borderColor: '#007BFF', tension: 0.3, pointRadius: 2 },
-      { label: 'ETH', data: ethAskData, borderColor: '#A103DF', tension: 0.3, pointRadius: 2 },
-      { label: 'PETE', data: peteAskData, borderColor: '#FF5722', tension: 0.3, pointRadius: 2 }
-    ]
-  };
+        // 1. PROCESSAMENTO PARA A TABELA (Agrupar por market_symbol)
+        const groupedMarkets = {};
+        
+        tickers.forEach(ticker => {
+          const market = ticker.market_symbol; // Ex: 'BTC/USD'
+          const bid = parseFloat(ticker.bid_price);
+          const ask = parseFloat(ticker.ask_price);
+          const spread = ask - bid;
+
+          if (!groupedMarkets[market]) {
+            groupedMarkets[market] = {
+              symbol: market,
+              bestBid: bid,
+              bestAsk: ask,
+              spread: spread,
+              exchanges: []
+            };
+          }
+
+          // Adiciona a exchange na lista deste mercado
+          groupedMarkets[market].exchanges.push({
+            name: ticker.exchange_name,
+            bid: bid,
+            ask: ask,
+            spread: spread
+          });
+
+          // Atualiza o melhor bid global (maior) e melhor ask global (menor)
+          if (bid > groupedMarkets[market].bestBid) groupedMarkets[market].bestBid = bid;
+          if (ask < groupedMarkets[market].bestAsk) groupedMarkets[market].bestAsk = ask;
+        });
+
+        setTableData(groupedMarkets);
+
+        // 2. PROCESSAMENTO PARA OS GRÁFICOS (Eixo X: Tempo, Eixo Y: Preços por Ativo)
+        // Pega todos os timestamps únicos, converte para hora local e ordena
+        const timestamps = [...new Set(tickers.map(t => t.timestamp))].sort();
+        const labels = timestamps.map(ts => {
+          const date = new Date(ts);
+          return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        });
+
+        // Cores fixas para os ativos principais
+        const assetColors = {
+          'BTC': '#007BFF',
+          'ETH': '#A103DF',
+          'PETE': '#FF5722'
+        };
+
+        const datasetsBid = [];
+        const datasetsAsk = [];
+
+        // Agrupa os preços baseando-se no base_asset (BTC, ETH, etc)
+        const assets = [...new Set(tickers.map(t => t.base_asset))];
+        
+        assets.forEach((asset, index) => {
+          const color = assetColors[asset] || `#${Math.floor(Math.random()*16777215).toString(16)}`;
+          
+          // Mapeia os dados cronologicamente
+          const dataBid = timestamps.map(ts => {
+            // Acha o ticker desse ativo nesse exato timestamp
+            const t = tickers.find(t => t.timestamp === ts && t.base_asset === asset);
+            return t ? parseFloat(t.bid_price) : null; 
+          });
+
+          const dataAsk = timestamps.map(ts => {
+            const t = tickers.find(t => t.timestamp === ts && t.base_asset === asset);
+            return t ? parseFloat(t.ask_price) : null;
+          });
+
+          datasetsBid.push({ label: asset, data: dataBid, borderColor: color, tension: 0.3, pointRadius: 2, spanGaps: true });
+          datasetsAsk.push({ label: asset, data: dataAsk, borderColor: color, tension: 0.3, pointRadius: 2, spanGaps: true });
+        });
+
+        setChartDataBid({ labels, datasets: datasetsBid });
+        setChartDataAsk({ labels, datasets: datasetsAsk });
+
+        // Abre o primeiro acordeão automaticamente se houver dados
+        if (Object.keys(groupedMarkets).length > 0) {
+          setExpandedRow(Object.keys(groupedMarkets)[0]);
+        }
+
+      } catch (error) {
+        console.error("Erro ao carregar dados do dashboard:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
 
   return (
     <>
@@ -81,11 +147,17 @@ export default function MarketOverview() {
           <div className="chart-header">
             <div>
               <div className="chart-title">BEST BID PRICES</div>
-              <div className="chart-subtitle">Comparativo Multi-Ativos</div>
+              <div className="chart-subtitle">Comparativo Multi-Ativos (Dados da API)</div>
             </div>
           </div>
           <div className="chart-container">
-            <Line data={bidData} options={chartOptions} />
+            {loading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
+            ) : chartDataBid.labels.length > 0 ? (
+              <Line data={chartDataBid} options={chartOptions} />
+            ) : (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Sem dados suficientes</div>
+            )}
           </div>
         </div>
 
@@ -93,11 +165,17 @@ export default function MarketOverview() {
           <div className="chart-header">
             <div>
               <div className="chart-title">BEST ASK PRICES</div>
-              <div className="chart-subtitle">Comparativo Multi-Ativos</div>
+              <div className="chart-subtitle">Comparativo Multi-Ativos (Dados da API)</div>
             </div>
           </div>
           <div className="chart-container">
-            <Line data={askData} options={chartOptions} />
+             {loading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
+            ) : chartDataAsk.labels.length > 0 ? (
+              <Line data={chartDataAsk} options={chartOptions} />
+            ) : (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Sem dados suficientes</div>
+            )}
           </div>
         </div>
       </div>
@@ -109,64 +187,72 @@ export default function MarketOverview() {
             <tr>
               <th className="row-icon-cell"></th>
               <th>Mercado Base</th>
-              <th>Melhor Bid</th>
-              <th>Melhor Ask</th>
-              <th>Spread</th>
+              <th>Melhor Bid (Global)</th>
+              <th>Melhor Ask (Global)</th>
+              <th>Spread (Global)</th>
             </tr>
           </thead>
           <tbody>
-            {/* Linha BTC */}
-            <tr className={`exchange-row ${expandedRow === 'btc' ? 'expanded' : ''}`} onClick={() => toggleAccordion('btc')}>
-              <td className="row-icon-cell"><span className="arrow-icon">▼</span></td>
-              <td><span className="market-badge">BTC / USD</span></td>
-              <td className="best-price">62.150,00</td>
-              <td className="best-price">62.151,50</td>
-              <td>1,50 USD</td>
-            </tr>
-            {expandedRow === 'btc' && (
-              <tr className="row-details show">
-                <td colSpan="5">
-                  <div className="details-container">
-                    <div className="details-title">Comparativo de Exchanges - BTC/USD</div>
-                    <table className="nested-table">
-                      <thead>
-                        <tr><th>Exchange</th><th>Bid Price</th><th>Ask Price</th><th>Spread Local</th></tr>
-                      </thead>
-                      <tbody>
-                        <tr><td>Binance</td><td className="best-price">62.150,00</td><td>62.152,00</td><td>2,00</td></tr>
-                        <tr><td>Coinbase</td><td>62.148,50</td><td className="best-price">62.151,50</td><td>3,00</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
+            {loading ? (
+               <tr>
+                <td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                  Buscando dados no servidor...
                 </td>
               </tr>
-            )}
-
-            {/* Linha ETH */}
-            <tr className={`exchange-row ${expandedRow === 'eth' ? 'expanded' : ''}`} onClick={() => toggleAccordion('eth')}>
-              <td className="row-icon-cell"><span className="arrow-icon">▼</span></td>
-              <td><span className="market-badge">ETH / USD</span></td>
-              <td className="best-price">3.405,20</td>
-              <td className="best-price">3.406,00</td>
-              <td>0,80 USD</td>
-            </tr>
-            {expandedRow === 'eth' && (
-              <tr className="row-details show">
-                <td colSpan="5">
-                  <div className="details-container">
-                    <div className="details-title">Comparativo de Exchanges - ETH/USD</div>
-                    <table className="nested-table">
-                      <thead>
-                        <tr><th>Exchange</th><th>Bid Price</th><th>Ask Price</th><th>Spread Local</th></tr>
-                      </thead>
-                      <tbody>
-                        <tr><td>Binance</td><td>3.404,50</td><td>3.406,50</td><td>2,00</td></tr>
-                        <tr><td>Coinbase</td><td className="best-price">3.405,20</td><td className="best-price">3.406,00</td><td>0,80</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
+            ) : Object.keys(tableData).length === 0 ? (
+               <tr>
+                <td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                  Nenhum ticker encontrado na API.
                 </td>
               </tr>
+            ) : (
+              // Mapeia dinamicamente os mercados agrupados
+              Object.values(tableData).map((market) => (
+                <React.Fragment key={market.symbol}>
+                  <tr className={`exchange-row ${expandedRow === market.symbol ? 'expanded' : ''}`} onClick={() => toggleAccordion(market.symbol)}>
+                    <td className="row-icon-cell"><span className="arrow-icon">▼</span></td>
+                    <td><span className="market-badge">{market.symbol}</span></td>
+                    <td className="best-price">{market.bestBid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                    <td className="best-price">{market.bestAsk.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                    <td>{market.spread.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                  
+                  {/* Tabela Interna (Exchanges do Mercado) */}
+                  {expandedRow === market.symbol && (
+                    <tr className="row-details show">
+                      <td colSpan="5">
+                        <div className="details-container">
+                          <div className="details-title">Comparativo de Exchanges - {market.symbol}</div>
+                          <table className="nested-table">
+                            <thead>
+                              <tr>
+                                <th>Exchange</th>
+                                <th>Bid Price</th>
+                                <th>Ask Price</th>
+                                <th>Spread Local</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {market.exchanges.map((ex, idx) => (
+                                <tr key={idx}>
+                                  <td>{ex.name}</td>
+                                  <td className={ex.bid === market.bestBid ? "best-price" : ""}>
+                                    {ex.bid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td className={ex.ask === market.bestAsk ? "best-price" : ""}>
+                                    {ex.ask.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td>{ex.spread.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))
             )}
           </tbody>
         </table>
