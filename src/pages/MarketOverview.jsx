@@ -24,12 +24,33 @@ const getChartOptions = (datasets) => {
         },
         grid: { color: '#F0F0F0' },
         ticks: isSingleAsset 
-          ? { callback: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
-          : { callback: (value) => [1, 10, 100, 1000, 10000, 100000].includes(value) ? value.toLocaleString('pt-BR') : null }
+          ? { callback: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 }) }
+          // Adicionei valores decimais na escala logarítmica para acomodar micro-coins
+          : { callback: (value) => [0.0001, 0.01, 1, 10, 100, 1000, 10000, 100000].includes(value) ? value.toLocaleString('pt-BR') : null }
       },
       x: { grid: { display: false } }
     },
-    plugins: { legend: { display: false } },
+    plugins: { 
+      legend: { display: false },
+      // CORREÇÃO: Força o tooltip a mostrar até 8 casas decimais, evitando que micro-moedas sejam exibidas como "0"
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            let label = context.dataset.label || '';
+            if (label) {
+              label += ': ';
+            }
+            if (context.parsed.y !== null) {
+              label += new Intl.NumberFormat('pt-BR', { 
+                minimumFractionDigits: 2, 
+                maximumFractionDigits: 8 
+              }).format(context.parsed.y);
+            }
+            return label;
+          }
+        }
+      }
+    },
     animation: { duration: 0 } 
   };
 };
@@ -53,12 +74,11 @@ export default function MarketOverview() {
         setLoading(true);
         const response = await api.get('/api/tickers/');
         
-        // --- FILTRO DE MERCADOS ZERADOS ---
-        // Removemos qualquer leitura da API onde o Bid e o Ask sejam 0 ou inválidos (NaN)
+        // CORREÇÃO: AMBOS (Bid e Ask) devem ser obrigatoriamente maiores que zero (&&)
         const tickers = (response.data.results || []).filter(t => {
           const bid = parseFloat(t.bid_price);
           const ask = parseFloat(t.ask_price);
-          return bid > 0 || ask > 0;
+          return bid > 0 && ask > 0;
         });
 
         const groupedMarkets = {};
@@ -255,9 +275,9 @@ export default function MarketOverview() {
                   <tr className={`exchange-row ${expandedRow === market.symbol ? 'expanded' : ''}`} onClick={() => toggleAccordion(market.symbol)}>
                     <td className="row-icon-cell"><span className="arrow-icon">▼</span></td>
                     <td><span className="market-badge">{market.symbol}</span></td>
-                    <td className="best-price">{market.bestBid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="best-price">{market.bestAsk.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td>{market.spread.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                    <td className="best-price">{market.bestBid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</td>
+                    <td className="best-price">{market.bestAsk.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</td>
+                    <td>{market.spread.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</td>
                   </tr>
                   
                   {expandedRow === market.symbol && (
@@ -279,12 +299,12 @@ export default function MarketOverview() {
                                 <tr key={idx}>
                                   <td>{ex.name}</td>
                                   <td className={ex.bid === market.bestBid ? "best-price" : ""}>
-                                    {ex.bid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    {ex.bid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}
                                   </td>
                                   <td className={ex.ask === market.bestAsk ? "best-price" : ""}>
-                                    {ex.ask.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    {ex.ask.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}
                                   </td>
-                                  <td>{ex.spread.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                  <td>{ex.spread.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</td>
                                 </tr>
                               ))}
                             </tbody>
