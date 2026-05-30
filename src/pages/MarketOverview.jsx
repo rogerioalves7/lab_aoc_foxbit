@@ -6,10 +6,8 @@ import { Line } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, LogarithmicScale);
 
-// --- NOVA FUNÇÃO DINÂMICA DE OPÇÕES DO GRÁFICO ---
+// --- FUNÇÃO DINÂMICA DE OPÇÕES DO GRÁFICO (ATUALIZADA) ---
 const getChartOptions = (datasets) => {
-  // Se tivermos apenas 1 ativo na tela, usamos escala Linear para dar zoom na volatilidade.
-  // Caso contrário, usamos Logarítmica para caber moedas de valores muito distantes juntas.
   const isSingleAsset = datasets.length === 1;
 
   return {
@@ -18,27 +16,28 @@ const getChartOptions = (datasets) => {
     scales: {
       y: {
         type: isSingleAsset ? 'linear' : 'logarithmic',
+        // beginAtZero: false garante que o gráfico dê zoom na variação real e não comece do chão
+        beginAtZero: false, 
+        // grace adiciona uma margem de respiro de 5% acima e abaixo da linha
+        grace: isSingleAsset ? '5%' : '0%',
         title: { 
           display: true, 
-          text: isSingleAsset ? 'USD (Linear Auto-Scale)' : 'USD (Log Scale)', 
+          text: isSingleAsset ? 'USD (Auto-Scale)' : 'USD (Log Scale)', 
           color: '#6C757D' 
         },
         grid: { color: '#F0F0F0' },
         ticks: isSingleAsset 
           ? {
-              // No modo Linear, o Chart.js acha o Min e Max automaticamente.
-              // Apenas formatamos os números para o padrão monetário.
               callback: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
             }
           : {
-              // No modo Logarítmico, fixamos as quebras para a tela não ficar poluída.
               callback: (value) => [1, 10, 100, 1000, 10000, 100000].includes(value) ? value.toLocaleString('pt-BR') : null
             }
       },
       x: { grid: { display: false } }
     },
     plugins: { legend: { display: false } },
-    animation: { duration: 400 } // Animação suave na troca de escala
+    animation: { duration: 0 } // Removemos a animação para evitar distorções visuais ao trocar a escala
   };
 };
 
@@ -160,6 +159,10 @@ export default function MarketOverview() {
     datasets: chartDataAsk.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch)) || []
   };
 
+  // --- CONTROLE DE CHAVE (KEY) PARA FORÇAR O REDESENHO DO GRÁFICO ---
+  const isSingleBid = filteredChartBid.datasets.length === 1;
+  const isSingleAsk = filteredChartAsk.datasets.length === 1;
+
   return (
     <>
       <Header />
@@ -188,8 +191,11 @@ export default function MarketOverview() {
             {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
             ) : filteredChartBid.datasets.length > 0 ? (
-              {/* Passamos o array de datasets filtrados para a nossa nova função de opções */}
-              <Line data={filteredChartBid} options={getChartOptions(filteredChartBid.datasets)} />
+              <Line 
+                key={isSingleBid ? 'bid-linear' : 'bid-log'} // Força o React a recriar o Canvas quando mudar de escala
+                data={filteredChartBid} 
+                options={getChartOptions(filteredChartBid.datasets)} 
+              />
             ) : (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Nenhum ativo corresponde ao filtro</div>
             )}
@@ -207,8 +213,11 @@ export default function MarketOverview() {
              {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
             ) : filteredChartAsk.datasets.length > 0 ? (
-              {/* Passamos o array de datasets filtrados para a nossa nova função de opções */}
-              <Line data={filteredChartAsk} options={getChartOptions(filteredChartAsk.datasets)} />
+              <Line 
+                key={isSingleAsk ? 'ask-linear' : 'ask-log'} // Força o React a recriar o Canvas quando mudar de escala
+                data={filteredChartAsk} 
+                options={getChartOptions(filteredChartAsk.datasets)} 
+              />
             ) : (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Nenhum ativo corresponde ao filtro</div>
             )}
