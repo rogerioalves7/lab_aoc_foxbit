@@ -15,7 +15,6 @@ export default function App() {
     // 1º: O Router agora é o elemento mais externo
     <Router>
       
-      // 2º: O MarketProvider fica dentro do Router (agora ele tem acesso ao useNavigate!)
       <MarketProvider>
         
         <div className="background-blur"></div>
