@@ -1,16 +1,36 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import api from '../services/api'; // Importa a conexão
 
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    toast.success('Bem-vindo de volta, Analista!');
-    navigate('/');
+    setLoading(true);
+
+    try {
+      // Faz o POST para a rota do schema
+      const response = await api.post('/api-token-auth/', { username, password });
+      
+      // Salva o token real no localStorage
+      localStorage.setItem('@AcmeAuth:token', response.data.token);
+      
+      toast.success('Bem-vindo ao sistema ACME!');
+      navigate('/');
+    } catch (error) {
+      console.error(error);
+      // O interceptor já mostra o toast de erro geral, mas podemos colocar um fallback
+      if (error.response?.status === 400) {
+        toast.error('Usuário ou senha inválidos.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -24,13 +44,13 @@ export default function Login() {
 
         <form onSubmit={handleLogin}>
           <div className="form-group">
-            <label className="form-label">E-mail Corporativo</label>
+            <label className="form-label">Usuário</label>
             <input 
-              type="email" 
+              type="text" 
               className="form-input" 
-              placeholder="analista@foxbit.com.br"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Digite seu usuário"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
             />
           </div>
@@ -47,8 +67,8 @@ export default function Login() {
             />
           </div>
 
-          <button type="submit" className="btn-action execute btn-block">
-            Entrar no Sistema
+          <button type="submit" className="btn-action execute btn-block" disabled={loading}>
+            {loading ? 'Autenticando...' : 'Entrar no Sistema'}
           </button>
         </form>
 

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import ExchangeModal from '../components/ExchangeModal';
 import { toast } from 'react-toastify';
+import api from '../services/api'; // Importação do serviço de API
 
 export default function Settings() {
   const [profile] = useState({
@@ -10,11 +11,9 @@ export default function Settings() {
     password: '*************'
   });
 
-  const [exchanges, setExchanges] = useState([
-    { id: 1, name: 'Binance', apiKey: '****-****-1234', status: 'Ativo' },
-    { id: 2, name: 'Coinbase', apiKey: '****-****-5678', status: 'Ativo' },
-    { id: 3, name: 'Kraken', apiKey: '****-****-9012', status: 'Pausado' },
-  ]);
+  // --- Estados das Exchanges (Agora integrados com a API) ---
+  const [exchanges, setExchanges] = useState([]);
+  const [loadingExchanges, setLoadingExchanges] = useState(true);
 
   // --- Controle do Modal de Adição/Edição ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -23,7 +22,34 @@ export default function Settings() {
   // --- Controle do Modal de Confirmação de Exclusão ---
   const [exchangeToDelete, setExchangeToDelete] = useState(null);
 
-  // Funções de Adição/Edição
+  // --- Efeito para carregar as Exchanges da API ao abrir a tela ---
+  useEffect(() => {
+    const fetchExchanges = async () => {
+      try {
+        // GET na rota fornecida no schema do backend
+        const response = await api.get('/api/exchanges/');
+        
+        // Mapeia os resultados da paginação.
+        // Como o backend atualmente só retorna "name", criamos dados complementares visuais provisórios.
+        const formattedData = response.data.results.map((item, index) => ({
+          id: index, // ID provisório para a iteração local
+          name: item.name,
+          apiKey: '****-****-****', // Campo simulado até o backend suportar
+          status: 'Ativo' // Campo simulado até o backend suportar
+        }));
+
+        setExchanges(formattedData);
+      } catch (error) {
+        console.error("Erro ao buscar exchanges:", error);
+      } finally {
+        setLoadingExchanges(false);
+      }
+    };
+
+    fetchExchanges();
+  }, []);
+
+  // --- Funções de Adição/Edição ---
   const openModal = (exchange = null) => {
     setCurrentExchange(exchange);
     setIsModalOpen(true);
@@ -35,6 +61,8 @@ export default function Settings() {
   };
 
   const handleSaveExchange = (formData) => {
+    // ATENÇÃO: Aqui faremos apenas alteração local em memória. 
+    // Quando o backend disponibilizar as rotas POST/PUT, substituiremos pela chamada API.
     if (currentExchange) {
       setExchanges(exchanges.map(ex => 
         ex.id === currentExchange.id ? { ...ex, ...formData } : ex
@@ -51,7 +79,7 @@ export default function Settings() {
     closeModal();
   };
 
-  // Funções de Exclusão
+  // --- Funções de Exclusão ---
   const confirmDelete = (id) => {
     setExchangeToDelete(id);
   };
@@ -61,6 +89,7 @@ export default function Settings() {
   };
 
   const executeDelete = () => {
+    // ATENÇÃO: Exclusão local em memória até a rota DELETE ser criada no backend.
     if (exchangeToDelete) {
       setExchanges(exchanges.filter(ex => ex.id !== exchangeToDelete));
       toast.info('Conexão removida permanentemente.');
@@ -121,9 +150,16 @@ export default function Settings() {
               </tr>
             </thead>
             <tbody>
-              {exchanges.length === 0 ? (
+              {/* Tratamento condicional para o estado de carregamento */}
+              {loadingExchanges ? (
                 <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                  <td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                    Buscando exchanges no servidor...
+                  </td>
+                </tr>
+              ) : exchanges.length === 0 ? (
+                <tr>
+                  <td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
                     Nenhuma exchange conectada.
                   </td>
                 </tr>
@@ -140,7 +176,6 @@ export default function Settings() {
                     <td>
                       <div style={{ display: 'flex', gap: '10px' }}>
                         <button className="btn-action review" style={{ padding: '4px 8px' }} onClick={() => openModal(ex)}>Editar</button>
-                        {/* AQUI ESTÁ A MUDANÇA: Chama o confirmDelete ao invés do prompt padrão */}
                         <button className="btn-action" style={{ padding: '4px 8px', backgroundColor: 'var(--danger-red)' }} onClick={() => confirmDelete(ex.id)}>Remover</button>
                       </div>
                     </td>
@@ -160,7 +195,7 @@ export default function Settings() {
         currentExchange={currentExchange}
       />
 
-      {/* NOVO: Modal de Confirmação de Exclusão */}
+      {/* Modal de Confirmação de Exclusão */}
       {exchangeToDelete && (
         <div className="modal-overlay" onClick={cancelDelete}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
