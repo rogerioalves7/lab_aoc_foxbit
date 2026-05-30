@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
-import api from '../services/api'; // Conexão com o backend
-import { toast } from 'react-toastify';
+import api from '../services/api';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, LogarithmicScale } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
-// Registra os componentes do ChartJS
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, LogarithmicScale);
 
 const chartOptions = {
@@ -28,7 +26,9 @@ const chartOptions = {
 export default function MarketOverview() {
   const [expandedRow, setExpandedRow] = useState(null);
   
-  // Estados para armazenar os dados reais da API
+  // Novo estado para o filtro de busca
+  const [searchTerm, setSearchTerm] = useState('');
+  
   const [loading, setLoading] = useState(true);
   const [tableData, setTableData] = useState({});
   const [chartDataBid, setChartDataBid] = useState({ labels: [], datasets: [] });
@@ -42,15 +42,13 @@ export default function MarketOverview() {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        // Busca os tickers mais recentes do backend
         const response = await api.get('/api/tickers/');
         const tickers = response.data.results || [];
 
-        // 1. PROCESSAMENTO PARA A TABELA (Agrupar por market_symbol)
         const groupedMarkets = {};
         
         tickers.forEach(ticker => {
-          const market = ticker.market_symbol; // Ex: 'BTC/USD'
+          const market = ticker.market_symbol;
           const bid = parseFloat(ticker.bid_price);
           const ask = parseFloat(ticker.ask_price);
           const spread = ask - bid;
@@ -65,7 +63,6 @@ export default function MarketOverview() {
             };
           }
 
-          // Adiciona a exchange na lista deste mercado
           groupedMarkets[market].exchanges.push({
             name: ticker.exchange_name,
             bid: bid,
@@ -73,22 +70,18 @@ export default function MarketOverview() {
             spread: spread
           });
 
-          // Atualiza o melhor bid global (maior) e melhor ask global (menor)
           if (bid > groupedMarkets[market].bestBid) groupedMarkets[market].bestBid = bid;
           if (ask < groupedMarkets[market].bestAsk) groupedMarkets[market].bestAsk = ask;
         });
 
         setTableData(groupedMarkets);
 
-        // 2. PROCESSAMENTO PARA OS GRÁFICOS (Eixo X: Tempo, Eixo Y: Preços por Ativo)
-        // Pega todos os timestamps únicos, converte para hora local e ordena
         const timestamps = [...new Set(tickers.map(t => t.timestamp))].sort();
         const labels = timestamps.map(ts => {
           const date = new Date(ts);
           return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         });
 
-        // Cores fixas para os ativos principais
         const assetColors = {
           'BTC': '#007BFF',
           'ETH': '#A103DF',
@@ -98,15 +91,12 @@ export default function MarketOverview() {
         const datasetsBid = [];
         const datasetsAsk = [];
 
-        // Agrupa os preços baseando-se no base_asset (BTC, ETH, etc)
         const assets = [...new Set(tickers.map(t => t.base_asset))];
         
-        assets.forEach((asset, index) => {
+        assets.forEach((asset) => {
           const color = assetColors[asset] || `#${Math.floor(Math.random()*16777215).toString(16)}`;
           
-          // Mapeia os dados cronologicamente
           const dataBid = timestamps.map(ts => {
-            // Acha o ticker desse ativo nesse exato timestamp
             const t = tickers.find(t => t.timestamp === ts && t.base_asset === asset);
             return t ? parseFloat(t.bid_price) : null; 
           });
@@ -123,7 +113,6 @@ export default function MarketOverview() {
         setChartDataBid({ labels, datasets: datasetsBid });
         setChartDataAsk({ labels, datasets: datasetsAsk });
 
-        // Abre o primeiro acordeão automaticamente se houver dados
         if (Object.keys(groupedMarkets).length > 0) {
           setExpandedRow(Object.keys(groupedMarkets)[0]);
         }
@@ -138,9 +127,41 @@ export default function MarketOverview() {
     fetchDashboardData();
   }, []);
 
+  // --- LÓGICA DE FILTRAGEM ---
+  const normalizedSearch = searchTerm.toLowerCase();
+
+  // Filtra a Tabela
+  const filteredTableData = Object.values(tableData).filter(market => 
+    market.symbol.toLowerCase().includes(normalizedSearch)
+  );
+
+  // Filtra os Gráficos
+  const filteredChartBid = {
+    ...chartDataBid,
+    datasets: chartDataBid.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch)) || []
+  };
+
+  const filteredChartAsk = {
+    ...chartDataAsk,
+    datasets: chartDataAsk.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch)) || []
+  };
+
   return (
     <>
       <Header />
+
+      {/* --- BARRA DE FILTRO --- */}
+      <div className="section-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <span style={{ fontSize: '18px' }}>🔍</span>
+        <input 
+          type="text" 
+          className="form-input" 
+          style={{ margin: 0, maxWidth: '400px', backgroundColor: 'var(--bg-light)' }}
+          placeholder="Filtrar por ativo ou mercado (Ex: BTC, ETH...)" 
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
       
       <div className="top-charts-row">
         <div className="chart-card">
@@ -153,10 +174,10 @@ export default function MarketOverview() {
           <div className="chart-container">
             {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
-            ) : chartDataBid.labels.length > 0 ? (
-              <Line data={chartDataBid} options={chartOptions} />
+            ) : filteredChartBid.datasets.length > 0 ? (
+              <Line data={filteredChartBid} options={chartOptions} />
             ) : (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Sem dados suficientes</div>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Nenhum ativo corresponde ao filtro</div>
             )}
           </div>
         </div>
@@ -171,10 +192,10 @@ export default function MarketOverview() {
           <div className="chart-container">
              {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
-            ) : chartDataAsk.labels.length > 0 ? (
-              <Line data={chartDataAsk} options={chartOptions} />
+            ) : filteredChartAsk.datasets.length > 0 ? (
+              <Line data={filteredChartAsk} options={chartOptions} />
             ) : (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Sem dados suficientes</div>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Nenhum ativo corresponde ao filtro</div>
             )}
           </div>
         </div>
@@ -199,15 +220,14 @@ export default function MarketOverview() {
                   Buscando dados no servidor...
                 </td>
               </tr>
-            ) : Object.keys(tableData).length === 0 ? (
+            ) : filteredTableData.length === 0 ? (
                <tr>
                 <td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                  Nenhum ticker encontrado na API.
+                  {searchTerm ? `Nenhum mercado encontrado para "${searchTerm}".` : "Nenhum ticker encontrado na API."}
                 </td>
               </tr>
             ) : (
-              // Mapeia dinamicamente os mercados agrupados
-              Object.values(tableData).map((market) => (
+              filteredTableData.map((market) => (
                 <React.Fragment key={market.symbol}>
                   <tr className={`exchange-row ${expandedRow === market.symbol ? 'expanded' : ''}`} onClick={() => toggleAccordion(market.symbol)}>
                     <td className="row-icon-cell"><span className="arrow-icon">▼</span></td>
@@ -217,7 +237,6 @@ export default function MarketOverview() {
                     <td>{market.spread.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                   </tr>
                   
-                  {/* Tabela Interna (Exchanges do Mercado) */}
                   {expandedRow === market.symbol && (
                     <tr className="row-details show">
                       <td colSpan="5">
