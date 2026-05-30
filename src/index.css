@@ -46,7 +46,8 @@ html, body {
   position: fixed;
   top: 0; left: 0; 
   width: 100vw; height: 100vh;
-  background-image: url('https://raw.githubusercontent.com/ai-code-companion/caminho-dashboard/main/images/office-blur.png');
+  /* Aponta diretamente para o arquivo na pasta public */
+  background-image: url('/background-office.avif');
   background-size: cover; 
   background-position: center;
   filter: blur(12px) brightness(0.9);
