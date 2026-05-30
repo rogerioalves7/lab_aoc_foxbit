@@ -11,7 +11,7 @@ const getChartOptions = () => ({
   maintainAspectRatio: false,
   scales: {
     y: {
-      type: 'linear', // Como agora é seleção única, garantimos que será sempre Linear!
+      type: 'linear',
       beginAtZero: false, 
       grace: '5%',
       title: { display: true, text: 'USD (Auto-Scale)', color: '#6C757D' },
@@ -25,20 +25,17 @@ const getChartOptions = () => ({
 });
 
 export default function MarketOverview() {
-  const { tickers, loading } = useMarket(); // Puxa os dados do motor global
+  const { tickers, loading } = useMarket();
   const [selectedMarket, setSelectedMarket] = useState('');
   
-  // Extrai lista de mercados disponíveis
   const availableMarkets = [...new Set(tickers.map(t => t.market_symbol))].sort();
 
-  // Seleciona o primeiro mercado automaticamente assim que carregar
   useEffect(() => {
     if (availableMarkets.length > 0 && !selectedMarket) {
       setSelectedMarket(availableMarkets[0]);
     }
   }, [availableMarkets, selectedMarket]);
 
-  // Filtra tudo na tela APENAS para o mercado selecionado
   const filteredTickers = tickers.filter(t => t.market_symbol === selectedMarket);
   
   // Processamento Tabela
@@ -46,12 +43,15 @@ export default function MarketOverview() {
   filteredTickers.forEach(t => {
     const bid = parseFloat(t.bid_price);
     const ask = parseFloat(t.ask_price);
-    marketStats.exchanges.push({ name: t.exchange_name, bid, ask, spread: ask - bid });
+    
+    // Formata o timestamp do ticker
+    const formattedTime = new Date(t.timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
+
+    marketStats.exchanges.push({ name: t.exchange_name, bid, ask, spread: ask - bid, timestamp: formattedTime });
     if (bid > marketStats.bestBid) marketStats.bestBid = bid;
     if (ask < marketStats.bestAsk) marketStats.bestAsk = ask;
   });
 
-  // Processamento Gráfico
   const timestamps = [...new Set(filteredTickers.map(t => t.timestamp))].sort();
   const labels = timestamps.map(ts => new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
   
@@ -111,17 +111,20 @@ export default function MarketOverview() {
         <div className="accordion-title">DISTRIBUIÇÃO EM EXCHANGES ({selectedMarket})</div>
         <table className="accordion-table">
           <thead>
-            <tr><th>Exchange</th><th>Bid Price</th><th>Ask Price</th><th>Spread Local</th></tr>
+            {/* Coluna Atualização adicionada */}
+            <tr><th>Exchange</th><th>Bid Price</th><th>Ask Price</th><th>Spread Local</th><th>Atualização</th></tr>
           </thead>
           <tbody>
             {loading && marketStats.exchanges.length === 0 ? (
-               <tr><td colSpan="4" style={{ textAlign: 'center', padding: '30px' }}>Buscando dados no servidor...</td></tr>
+               <tr><td colSpan="5" style={{ textAlign: 'center', padding: '30px' }}>Buscando dados no servidor...</td></tr>
             ) : marketStats.exchanges.map((ex, idx) => (
               <tr key={idx}>
                 <td>{ex.name}</td>
                 <td className={ex.bid === marketStats.bestBid ? "best-price" : ""}>{ex.bid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</td>
                 <td className={ex.ask === marketStats.bestAsk ? "best-price" : ""}>{ex.ask.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</td>
                 <td>{ex.spread.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</td>
+                {/* Exibição da hora formatada */}
+                <td style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{ex.timestamp}</td>
               </tr>
             ))}
           </tbody>

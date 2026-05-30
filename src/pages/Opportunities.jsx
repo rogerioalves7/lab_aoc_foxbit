@@ -6,7 +6,7 @@ import { useMarket } from '../contexts/MarketContext';
 import { toast } from 'react-toastify';
 
 export default function Opportunities() {
-  const { opportunities, loading } = useMarket(); // <-- Puxa do contexto global!
+  const { opportunities, loading } = useMarket(); 
   const [searchTerm, setSearchTerm] = useState('');
   
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
@@ -61,19 +61,22 @@ export default function Opportunities() {
         </div>
         <table className="data-table">
           <thead>
-            <tr><th>Mercado</th><th>Tipo</th><th>Ação Recomendada</th><th>Ação</th></tr>
+            {/* Coluna de Atualização inserida */}
+            <tr><th>Mercado</th><th>Tipo</th><th>Ação Recomendada</th><th>Atualização</th><th>Ação</th></tr>
           </thead>
           <tbody>
             {loading && opportunities.length === 0 ? (
-              <tr><td colSpan="4" style={{ textAlign: 'center', padding: '30px' }}>Buscando oportunidades...</td></tr>
+              <tr><td colSpan="5" style={{ textAlign: 'center', padding: '30px' }}>Buscando oportunidades...</td></tr>
             ) : filteredOpportunities.length === 0 ? (
-              <tr><td colSpan="4" style={{ textAlign: 'center', padding: '30px' }}>Nenhuma oportunidade encontrada.</td></tr>
+              <tr><td colSpan="5" style={{ textAlign: 'center', padding: '30px' }}>Nenhuma oportunidade encontrada.</td></tr>
             ) : (
               filteredOpportunities.map((opp) => (
                 <tr key={opp.id}>
                   <td><span className="market-badge">{opp.market}</span></td>
                   <td><span className={`badge ${opp.badgeClass}`}>{opp.type}</span></td>
                   <td><strong>{opp.recommendation}</strong></td>
+                  {/* Célula renderizando a hora */}
+                  <td style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{opp.timestamp}</td>
                   <td>
                     <button className="btn-action execute" style={{ minWidth: '140px' }} onClick={() => { setSelectedOrderData({ market: opp.market, side: opp.actionSide, type: 'limit' }); setIsOrderModalOpen(true); }}>
                       Criar Ordem
