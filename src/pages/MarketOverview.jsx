@@ -6,7 +6,6 @@ import { Line } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, LogarithmicScale);
 
-// --- FUNÇÃO DINÂMICA DE OPÇÕES DO GRÁFICO (ATUALIZADA) ---
 const getChartOptions = (datasets) => {
   const isSingleAsset = datasets.length === 1;
 
@@ -16,9 +15,7 @@ const getChartOptions = (datasets) => {
     scales: {
       y: {
         type: isSingleAsset ? 'linear' : 'logarithmic',
-        // beginAtZero: false garante que o gráfico dê zoom na variação real e não comece do chão
         beginAtZero: false, 
-        // grace adiciona uma margem de respiro de 5% acima e abaixo da linha
         grace: isSingleAsset ? '5%' : '0%',
         title: { 
           display: true, 
@@ -27,17 +24,13 @@ const getChartOptions = (datasets) => {
         },
         grid: { color: '#F0F0F0' },
         ticks: isSingleAsset 
-          ? {
-              callback: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            }
-          : {
-              callback: (value) => [1, 10, 100, 1000, 10000, 100000].includes(value) ? value.toLocaleString('pt-BR') : null
-            }
+          ? { callback: (value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+          : { callback: (value) => [1, 10, 100, 1000, 10000, 100000].includes(value) ? value.toLocaleString('pt-BR') : null }
       },
       x: { grid: { display: false } }
     },
     plugins: { legend: { display: false } },
-    animation: { duration: 0 } // Removemos a animação para evitar distorções visuais ao trocar a escala
+    animation: { duration: 0 } 
   };
 };
 
@@ -59,7 +52,14 @@ export default function MarketOverview() {
       try {
         setLoading(true);
         const response = await api.get('/api/tickers/');
-        const tickers = response.data.results || [];
+        
+        // --- FILTRO DE MERCADOS ZERADOS ---
+        // Removemos qualquer leitura da API onde o Bid e o Ask sejam 0 ou inválidos (NaN)
+        const tickers = (response.data.results || []).filter(t => {
+          const bid = parseFloat(t.bid_price);
+          const ask = parseFloat(t.ask_price);
+          return bid > 0 || ask > 0;
+        });
 
         const groupedMarkets = {};
         
@@ -159,7 +159,6 @@ export default function MarketOverview() {
     datasets: chartDataAsk.datasets?.filter(ds => ds.label.toLowerCase().includes(normalizedSearch)) || []
   };
 
-  // --- CONTROLE DE CHAVE (KEY) PARA FORÇAR O REDESENHO DO GRÁFICO ---
   const isSingleBid = filteredChartBid.datasets.length === 1;
   const isSingleAsk = filteredChartAsk.datasets.length === 1;
 
@@ -192,7 +191,7 @@ export default function MarketOverview() {
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
             ) : filteredChartBid.datasets.length > 0 ? (
               <Line 
-                key={isSingleBid ? 'bid-linear' : 'bid-log'} // Força o React a recriar o Canvas quando mudar de escala
+                key={isSingleBid ? 'bid-linear' : 'bid-log'} 
                 data={filteredChartBid} 
                 options={getChartOptions(filteredChartBid.datasets)} 
               />
@@ -214,7 +213,7 @@ export default function MarketOverview() {
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>Carregando gráfico...</div>
             ) : filteredChartAsk.datasets.length > 0 ? (
               <Line 
-                key={isSingleAsk ? 'ask-linear' : 'ask-log'} // Força o React a recriar o Canvas quando mudar de escala
+                key={isSingleAsk ? 'ask-linear' : 'ask-log'} 
                 data={filteredChartAsk} 
                 options={getChartOptions(filteredChartAsk.datasets)} 
               />
@@ -247,7 +246,7 @@ export default function MarketOverview() {
             ) : filteredTableData.length === 0 ? (
                <tr>
                 <td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                  {searchTerm ? `Nenhum mercado encontrado para "${searchTerm}".` : "Nenhum ticker encontrado na API."}
+                  {searchTerm ? `Nenhum mercado encontrado para "${searchTerm}".` : "Nenhum ticker ativo retornado pela API."}
                 </td>
               </tr>
             ) : (
