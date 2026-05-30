@@ -2,6 +2,8 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+import {MarketProvider} from './contexts/MarketContext';
+
 import MarketOverview from './pages/MarketOverview';
 import Opportunities from './pages/Opportunities';
 import Settings from './pages/Settings';
@@ -10,7 +12,7 @@ import Signup from './pages/Signup';
 
 export default function App() {
   return (
-    <>
+    <MarketProvider>
       <div className="background-blur"></div>
       <div className="page-container">
         <Router>
@@ -36,6 +38,6 @@ export default function App() {
         pauseOnHover
         theme="light"
       />
-    </>
+    </MarketProvider>
   );
 }
