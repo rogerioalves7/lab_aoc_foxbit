@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom'; // <-- IMPORTANTE: Para trocar de tela
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 
@@ -10,7 +10,6 @@ export const MarketProvider = ({ children }) => {
   const [opportunities, setOpportunities] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // --- NOVO: Estado para guardar a ordem que veio do clique no Toast ---
   const [pendingOrder, setPendingOrder] = useState(null); 
   const navigate = useNavigate();
 
@@ -26,67 +25,112 @@ export const MarketProvider = ({ children }) => {
 
       setTickers(validTickers);
 
-      const marketStats = {};
+      // --- NOVO MOTOR DE DETECÇÃO (Prevenindo Operações Circulares) ---
+      const groupedMarkets = {};
+      
+      // 1. Agrupamos todos os dados por mercado para ter uma lista das corretoras em cada moeda
       validTickers.forEach(t => {
         const sym = t.market_symbol;
-        const bid = parseFloat(t.bid_price);
-        const ask = parseFloat(t.ask_price);
-        const ts = t.timestamp; 
-
-        if (!marketStats[sym]) {
-          marketStats[sym] = { 
-            symbol: sym, 
-            maxBid: bid, maxBidEx: t.exchange_name, maxBidTs: ts,
-            minAsk: ask, minAskEx: t.exchange_name, minAskTs: ts
-          };
-        } else {
-          if (bid > marketStats[sym].maxBid) { 
-            marketStats[sym].maxBid = bid; marketStats[sym].maxBidEx = t.exchange_name; marketStats[sym].maxBidTs = ts;
-          }
-          if (ask < marketStats[sym].minAsk) { 
-            marketStats[sym].minAsk = ask; marketStats[sym].minAskEx = t.exchange_name; marketStats[sym].minAskTs = ts;
-          }
-        }
+        if (!groupedMarkets[sym]) groupedMarkets[sym] = [];
+        
+        groupedMarkets[sym].push({
+          name: t.exchange_name,
+          bid: parseFloat(t.bid_price),
+          ask: parseFloat(t.ask_price),
+          ts: t.timestamp
+        });
       });
 
       const foundOpps = [];
       const formatPrice = (p) => p.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 
-      Object.values(marketStats).forEach(m => {
-        const latestTs = new Date(Math.max(new Date(m.maxBidTs), new Date(m.minAskTs)));
-        const formattedTime = latestTs.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
+      // 2. Analisamos os cruzamentos de corretoras
+      Object.entries(groupedMarkets).forEach(([sym, exchanges]) => {
+        // Só faz sentido buscar oportunidade "Cross-Exchange" se houver pelo menos 2 corretoras reportando preços
+        if (exchanges.length < 2) return;
 
-        if (m.maxBid > m.minAsk) {
+        let bestArb = null;
+        let bestArbProfit = -Infinity;
+
+        let bestSpreadOpp = null;
+        let maxSpreadPerc = 0;
+
+        // Cruzamos todas as corretoras contra todas as corretoras
+        exchanges.forEach(buyEx => { // buyEx é onde nós COMPRAMOS (olhamos o Ask deles)
+          exchanges.forEach(sellEx => { // sellEx é onde nós VENDEMOS (olhamos o Bid deles)
+            
+            // REGRA VITAL: Impede operações na mesma corretora (Foxbit x Foxbit, Binance x Binance)
+            if (buyEx.name === sellEx.name) return; 
+
+            // A) Arbitragem Direta: Conseguimos vender mais caro do que compramos na outra ponta?
+            const profit = sellEx.bid - buyEx.ask;
+            if (profit > 0 && profit > bestArbProfit) {
+              bestArbProfit = profit;
+              bestArb = { buyEx, sellEx, profit };
+            }
+
+            // B) Spread Largo: Se não há arbitragem, qual a maior distância entre Ask e Bid?
+            const gap = buyEx.ask - sellEx.bid;
+            if (gap > 0) {
+              const gapPerc = (gap / sellEx.bid) * 100;
+              // Se a distância entre a corretora A e B for maior que 0.5%, é uma chance de atuar como Maker no meio
+              if (gapPerc > 0.5 && gapPerc > maxSpreadPerc) {
+                maxSpreadPerc = gapPerc;
+                bestSpreadOpp = { buyEx, sellEx, gap };
+              }
+            }
+          });
+        });
+
+        // 3. Cadastra as oportunidades encontradas na ordem de prioridade
+        if (bestArb) {
+          const { buyEx, sellEx } = bestArb;
+          const latestTs = new Date(Math.max(new Date(buyEx.ts), new Date(sellEx.ts)));
+          const formattedTime = latestTs.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
+
           foundOpps.push({
-            id: `${m.symbol}-arb`, market: m.symbol, type: 'Arbitragem', badgeClass: 'badge-buy', 
-            recommendation: `Comprar em ${m.minAskEx} a ${formatPrice(m.minAsk)} e Vender em ${m.maxBidEx} a ${formatPrice(m.maxBid)}`,
+            id: `${sym}-arb`, market: sym, type: 'Arbitragem', badgeClass: 'badge-buy', 
+            recommendation: `Comprar em ${buyEx.name} a ${formatPrice(buyEx.ask)} e Vender em ${sellEx.name} a ${formatPrice(sellEx.bid)}`,
             actionSide: 'compra', timestamp: formattedTime 
           });
-        } else {
-          const spread = m.minAsk - m.maxBid;
-          const spreadPerc = (spread / m.maxBid) * 100;
-          if (spreadPerc > 0.5) {
-             const newBid = m.maxBid + (spread * 0.1); 
-             foundOpps.push({
-               id: `${m.symbol}-spread`, market: m.symbol, type: 'Spread Largo', badgeClass: 'badge-adjust', 
-               recommendation: `Criar Maker Bid a ${formatPrice(newBid)} para fechar spread`,
-               actionSide: 'compra', timestamp: formattedTime 
-             });
-          }
+        } 
+        else if (bestSpreadOpp) {
+          const { buyEx, sellEx, gap } = bestSpreadOpp;
+          const latestTs = new Date(Math.max(new Date(buyEx.ts), new Date(sellEx.ts)));
+          const formattedTime = latestTs.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
+
+          const newBid = sellEx.bid + (gap * 0.1); 
+          foundOpps.push({
+            id: `${sym}-spread`, market: sym, type: 'Spread Largo', badgeClass: 'badge-adjust', 
+            recommendation: `Criar Maker Bid a ${formatPrice(newBid)} para fechar spread entre ${sellEx.name} e ${buyEx.name}`,
+            actionSide: 'compra', timestamp: formattedTime 
+          });
         }
       });
 
+      // Fallback para não deixar a tela vazia caso o mercado esteja perfeitamente alinhado sem spreads
+      if (foundOpps.length === 0 && Object.keys(groupedMarkets).length > 0) {
+        Object.entries(groupedMarkets).slice(0, 3).forEach(([sym, exchanges]) => {
+          const ex = exchanges[0];
+          const formattedTime = new Date(ex.ts).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
+          foundOpps.push({
+            id: `${sym}-ajuste`, market: sym, type: 'Ajuste de Posição', badgeClass: 'badge-sell', 
+            recommendation: `Reposicionar Maker Ask em ${ex.name} para ${formatPrice(ex.ask * 0.999)}`,
+            actionSide: 'venda', timestamp: formattedTime 
+          });
+        });
+      }
+
+      // --- SISTEMA DE NOTIFICAÇÕES GLOBAL ---
       const previousIds = prevOppsRef.current;
       const newOpportunities = foundOpps.filter(opp => !previousIds.includes(opp.id));
 
       if (newOpportunities.length > 0 && previousIds.length > 0) {
         newOpportunities.forEach(opp => {
-          // --- NOVO: Notificação clicável ---
           toast.info(`🎯 Nova oportunidade: ${opp.type} em ${opp.market}! Clique para operar.`, { 
             theme: 'dark',
-            style: { cursor: 'pointer' }, // Muda o mouse para uma mãozinha indicando que é clicável
+            style: { cursor: 'pointer' },
             onClick: () => {
-              // Guarda a ordem no contexto e envia o usuário para a tela de oportunidades
               setPendingOrder({ market: opp.market, side: opp.actionSide });
               navigate('/opportunities');
             }
@@ -111,7 +155,6 @@ export const MarketProvider = ({ children }) => {
   }, []);
 
   return (
-    // Passamos o pendingOrder para frente
     <MarketContext.Provider value={{ tickers, opportunities, loading, pendingOrder, setPendingOrder }}>
       {children}
     </MarketContext.Provider>
