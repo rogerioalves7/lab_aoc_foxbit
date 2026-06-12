@@ -131,60 +131,7 @@ export default function Settings() {
         </div>
 
         {/* Seção de Exchanges */}
-        <div className="section-card">
-          <div className="section-header">
-            <div>
-              <div className="section-title">Conexões com Exchanges</div>
-              <p className="chart-subtitle">Adicione chaves de API para monitoramento externo</p>
-            </div>
-            <button className="btn-action execute" onClick={() => openModal()}>+ Adicionar Exchange</button>
-          </div>
-
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Exchange</th>
-                <th>API Key (Public)</th>
-                <th>Status</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Tratamento condicional para o estado de carregamento */}
-              {loadingExchanges ? (
-                <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                    Buscando exchanges no servidor...
-                  </td>
-                </tr>
-              ) : exchanges.length === 0 ? (
-                <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                    Nenhuma exchange conectada.
-                  </td>
-                </tr>
-              ) : (
-                exchanges.map((ex) => (
-                  <tr key={ex.id}>
-                    <td><strong>{ex.name}</strong></td>
-                    <td style={{ fontFamily: 'monospace' }}>{ex.apiKey}</td>
-                    <td>
-                      <span className={`badge ${ex.status === 'Ativo' ? 'badge-buy' : 'badge-adjust'}`}>
-                        {ex.status}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <button className="btn-action review" style={{ padding: '4px 8px' }} onClick={() => openModal(ex)}>Editar</button>
-                        <button className="btn-action" style={{ padding: '4px 8px', backgroundColor: 'var(--danger-red)' }} onClick={() => confirmDelete(ex.id)}>Remover</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        
       </div>
 
       {/* Modal de Adição/Edição (Componente Externo) */}
