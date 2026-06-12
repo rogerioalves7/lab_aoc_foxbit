@@ -39,7 +39,7 @@ export default function Login() {
         <div className="auth-header">
           <img src="https://foxbit.com.br/wp-content/uploads/2024/08/Logo-Foxbit-Group.png" alt="Logo Foxbit" className="auth-logo" />
           <div className="auth-title">Bem-vindo de volta</div>
-          <div className="auth-subtitle">Acesse o painel de operações ACME</div>
+          <div className="auth-subtitle">Acesse o painel de operações Foxbit</div>
         </div>
 
         <form onSubmit={handleLogin}>
